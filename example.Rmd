@@ -1,0 +1,376 @@
+---
+title: "Introduction to R Markdown"
+author: "Justin Sulik"
+date: "March 15, 2017"
+output: html_document
+---
+
+This is the markdown part of R Markdown. This will appear as formatted text where you can describe what you're doing, comment on results, etc. Pretty much like your results section, except that it's in the same document as you R code. 
+
+It's formatted with plain text symbols, yielding *italics*, **bold**, math: $x^2, \sqrt{y}, \sum_i^k m_i$ 
+
+$$ \frac{n!}{k!(n-k)!} = \binom{n}{k} $$
+
+# This is a heading
+
+## This is a subheading
+
+### And a subsubheading
+
+The following is an R chunk. You can either insert a new one by typing the first and last lines of the following source code, or just click the 'insert' button at the top of the viewer window. As you can see, the information in the header does not end up in the rendered html. 
+
+If your cursor is inside this chunk, you can run just that chunk by hitting `CMD+SHIFT+ENTER` (just like an R script). Also, see the little icons on the side? You can click those to run things too. 
+
+```{r}
+
+myFunction <- function(x){
+  return(x+x^2)
+}
+
+myFunction(3)
+
+mean(iris$Sepal.Length)
+
+model1 <- lm(Sepal.Length ~ Species, data=iris)
+
+summary(model1)
+```
+
+But while you might run individual chunks to check they work, the main point is to produce a nicely formatted document containing both your descriptive text and your R outputs. Hit 'Knit' on the toolbar of this panel to do that (or `CMD+SHIFT+K`). 
+
+Your rendered html file  should pop up a new window. Notice the 'Publish' button top right of that window? If you've set up up an [RPubs account](www.rpubs.com), you can click this to publish your webpage. Go to [rpubs.com/justinsulik](http://rpubs.com/justinsulik) to see it. 
+
+Here's another R chunk. It just loads the libraries I'll need for this session. Hitting 'Knit' doesn't add anything to your global environment, though, so if you want to mess around with the console, you need to load libraries there too. 
+
+```{r libraries, message=FALSE}
+library(boot)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pander)
+library(stargazer)
+```
+
+## Avoid copy+pasting or rounding errors
+
+You can also include inline R code. This is great for reporting your findings. You already had to write a command to calculate the mean of your favorite variable. Why not simply include that code in an `.Rmd` document to produce a report?
+
+The mean of Sepal.Length is `r mean(iris$Sepal.Length)` (SD=`r sd(iris$Sepal.Length)`). But who needs all these decimal places? Let's round the mean: `r round(mean(iris$Sepal.Length), 3)`. 
+
+You can extract parameters from the above linear model and report them here, e.g. for species *versicolor* ($\beta$ = `r model1$coefficients[2]`, SE = `r summary(model1)$coefficients[2,2]`, t = `r summary(model1)$coefficients[2,3]`, p = `r summary(model1)$coefficients[2,4]`). 
+
+Again, these need rounding. However, a common error in reported stats is incorrect rounding of p values, and incorrect use of sign (e.g. mixing up '=' and '<'). See @nuijten16, for instance. Correct rounding of the p values can be handled automatically. 
+
+I've added a name to the following chunk header (`reportP`). You don't have to but it helps with debugging. 
+
+```{r reportP}
+
+# Define a custom function for reporting p values automaticaly
+
+reportP <- function(pValue){
+  if (pValue < 0.001){
+    result <- "p < 0.001"
+  } else {
+    result <- sprintf("p = %.3f", pValue) # inserts a float into a string and simultaneously do rounding
+  }
+  return(result)
+}
+
+modelPvalue <- summary(model1)$coefficients[2,4]
+```
+
+Much nicer to be able to report that the relevant value is `r reportP(modelPvalue)`. Want to change the number of decimal places or the cutoff? Make one change to the above function, knit, and all the p values in your document will be updated. 
+
+# Citations and bibliography
+
+There was a citation above [@nuijten16]. To get this to display properly, simply add a ```bibliography:``` tag to the YAML header that points to your bibliography file (I use BibDesk to create a `.bib` file). 
+
+# Chunk options
+
+You might decide that nobody needs to see your `reportP` function, though, because it's not actually part of your analysis. It's easy control how much detail is shown for a given chunk. For instance, we could add `include=FALSE` in the header of this chunk, which would exclude it from the output. There should be no code after this paragraph but the code is still run so you can later do stuff with `modelPvalue`.
+
+```{r reportP2, include=FALSE}
+
+reportP <- function(pValue){
+  if (pValue < 0.001){
+    result <- sprintf("p < 0.001")
+  } else {
+    result <- sprintf("p = %.3f", pValue)
+  }
+  return(result)
+}
+
+modelPvalue <- summary(model1)$coefficients[2,4]
+```
+
+Or you might want to output all results, but hide the code that produced them. This is common for tables or graphs. 
+
+```{r reportP3, echo=FALSE}
+
+summary(iris)
+```
+
+These options can be set once for the whole document, for instance by putting the following chunk at the start of the document (after the YAML header). The `eval=FALSE` argument in the header means 'Don't run this code at all. Just display it'.  
+
+```{r setup, eval=FALSE}
+opts_chunk$set(echo = FALSE)
+```
+
+Fiddling with these options in the global setting means that it should take you just seconds to produce two documents:
+
+    1. Your results section for a manuscript
+    2. Supplementary material that shows all the working, which can be shared online
+
+## One of my favorite chunk options: caching
+
+Sometimes your R chunks might take a while to run. The following bootstrap takes a few seconds to run, but some of my other bootsraps can much longer (e.g. bootstrapping confidence intervals for parameters for complex `glmer` models). I can tell `knitr` to cache the results so that it runs once, stores the results, and doesn't run again *unless* I make changes to the chunk.
+
+```{r bootMeans, cache=TRUE}
+
+# Function to bootstrap: provides bootstrap samples for the mean of a particular column in the data frame
+
+myBootFunction <- function(data, i, column){
+  data <- data[i,]
+  bootMean <- mean(data[[column]])
+  return(bootMean)
+}
+
+# Bootstrap command that calls the above function, specifies which column I'm interested it, and runs the function 10000 times
+
+bootResults <- boot(data=iris, statistic=myBootFunction, column='Sepal.Length', R=10000)
+
+# Extract the CIs (here, using Bias-Corrected Accelerated method) and create a nicely formatted string that can be placed in my report
+
+CIstring <- function(bootOutput){
+  CIs <- boot.ci(bootOutput, type='bca')
+  lower <- CIs$'bca'[[4]]
+  upper <- CIs$'bca'[[5]]
+  CIstring <- sprintf("(bootstrapped 95%% CIs [%.3f, %.3f])", lower, upper) # This is the bit that creates the nice, reportable string
+  return(CIstring)
+}
+
+```
+
+Mean sepal length in the iris data is `r round(mean(iris$Sepal.Length), 3)` `r CIstring(bootResults)`. Obviously it would take only a few more lines of code to create a single function to report both mean and CIs. 
+
+# Some fancier formatting
+
+Number automatically by adding updating your YAML header as follows:
+
+```
+output: 
+  html_document:
+    number_sections: true
+```
+
+It's pretty easy to add a menu bar to skip from section to section. 
+
+```
+output: 
+  html_document:
+    toc: true
+    toc_depth: 
+    toc_float: true
+```  
+
+Since you're producing html, you can point to a CSS file in the header.
+
+```
+output:
+  html_document:
+    css: styles.css
+```
+
+You can also include CSS in your `.Rmd` file. See 'Custom CSS' [here](http://rmarkdown.rstudio.com/html_document_format.html). Of course, you could just include html tags, for instance making <span style="color:red">this phrase red</span>. 
+
+## Tables
+
+The previous table is quite ugly, so how about sprucing it up a little:
+
+```{r, echo=FALSE}
+pander(summary(iris))
+```
+
+We can use the same command for a model summary, but there are specialised libraries for formatting model outputs. 
+
+```{r, echo=FALSE, results='asis'}
+
+#The results=`asis` line in the header renders the html instead of printing the raw html
+
+# Same function as above (pander)
+pander(summary(model1))
+
+# Much fancier package
+stargazer(model1, type='html') 
+
+#You can change the table format simply by adding a `style=` argument to this command. Currently the package includes styles for economics and socio journals, but not common psych formats. Feel free to write an update!
+```
+
+# Plotting
+
+One strength of R Markdown is that you can directly include plots directly in your report. 
+
+```{r horriblePlot}
+p <- ggplot(data=iris, aes(x=Petal.Length,y=Sepal.Length, color=Species))+geom_point()
+p
+```
+
+Want to update your graph without having to export it and then insert in a report?
+
+```{r betterPlot, fig.height=5, fig.width=5, echo=FALSE}
+
+# Add regression lines for each species, update the labels and title, and change the background color. The model is resized by putting fig.height=X, fig.width=X in the chunk header. 
+
+p + stat_smooth(method=lm) +  
+  labs(x="Petal length (cm)", 
+       y="Sepal length (cm)", 
+       color="Species", 
+       title="What a lovely graph")+
+  theme_bw()
+```
+
+Now that you have a new graph, you don't have to export it and then insert it into your Word doc. It's enough to just write the code and knit it! But if you do want to reuse this graph elsewhere, go look at `./example_files/figure-html/betterPlot.png` on your local drive: the file name matches the R chunk name. 
+
+Obviously you can hide the above code if you want, but it's often useful for people to see how you made your graph, especially if it took you *hours* to work out how to do it.
+
+The size of the above image is specified in the chunk header, but you can also specify global settings in the YAML header. 
+
+```
+output:
+  html_document:
+    fig_width: 5
+    fig_height: 5
+```
+
+# Smart data processing and manipulation
+
+The packages `dplyr` and `tidyr` have nothing to do with markdown or `knitr`, so this is not an explanation on how to use them. Rather, it's an illustration of how they might be useful in an `.Rmd` file, given the present goals (reproducible science, efficient workflow) 
+
+- They make it easy to keep track of what you're doing to your data to produce a certain output
+- They avoid having to 
+    - recursively embed functions 
+    - create temporary objects 
+    - make changes to your dataframe
+
+Simple example: let's say you want to
+
+- create a model 
+
+- get its summary 
+
+- format that nicely
+
+This involves functions 
+
+- `lm()`
+
+- `summary()`  
+
+- `pander()`
+
+```{r, eval=FALSE}
+
+# Multiple embedding
+
+pander(summary(lm(Sepal.Length ~ Species, data=iris)))
+
+# Create temporary objects
+
+lm1 <- lm(Sepal.Length ~ Species, data=iris)
+summary1 <- summary(lm1)
+pander(summary1)
+```
+
+These are not so bad, but imagine you wanted to filter the data so that you're only looking at one species, calculate `area=length*width`, center that variable, and then create a model. Lots of embedding (hard to write) or lots of temporary objects (messy, easy to loose track of what temporary file you're working with). The smart alternative: piping. 
+
+Basically piping means "do X, feed the output to Y, feed the output of that to Z, etc.", so something like X $\rightarrow$ Y $\rightarrow$ Z. Much more human-readable than Z(Y(X)) and it doesn't involve cluttering up your global environment. 
+
+`dplyr` uses `%>%` for piping, so `X %>% Y %>% Z`. The above simple example then be:
+
+```{r}
+
+iris %>% lm(Sepal.Length~Species, .) %>% summary %>% pander
+```
+
+And the more complex example would be:
+
+```{r, eval=FALSE}
+
+iris %>%
+  filter(Species=='versicolor') %>% # Exclude some data
+  mutate(area=Sepal.Length*Sepal.Width, # Mutate creates a new variable
+         areaC=scale(area)) %>% #And another one - a scaled, centred version of the previous
+  lm(Petal.Length~areaC, .) %>%  
+  summary %>% 
+  pander
+```
+
+This doesn't involve changing your original data set in any way, it avoids embedding, and you needn't create any temporary objects. You don't have to make a note of what you did, because `dplyr` piping shows your working in detail. It's a bit like archaeology, but upside down. A reader can see that you extracted a subset of the data, and then centred the independent variable.
+
+![](./imgs/rocklayers1.jpg) ![](./imgs/1564643.jpg)
+
+If you just saved (or shared) the output of the `lm`, you'd lose this information.  And if you want to make changes to this in the future, you can just change the relevant line and rerun the anlysis. 
+
+The main thing to remember is that, by default, `dplyr` assumes that the output of the previous function is the first argument in the current function, so the following are equivalent:
+
+```{r, eval=FALSE}
+
+# Normal
+filter(iris, Species=='versicolor')
+
+# With piping
+iris %>% filter(Species=='versicolor')
+```
+
+If you want the output placed anywhere other than as the first argument of the function, use a `.` to mark its position. So the following are equivalent: 
+
+```{r, eval=FALSE}
+
+# Normal
+lm(Y~X, iris)
+
+# With piping
+iris %>% lm(Y~X, .) # Not `iris %>% lm(Y~X)` which would mean `lm(iris, Y~Z)`
+```
+
+The point is that you can pipe your data through a whole bunch of functions before piping it into your model, and you can share how you did that rather than just sharing the model output. 
+
+Another great function in `dplyr` is `summarise`:
+
+```{r}
+
+iris %>%
+  group_by(Species) %>%
+  summarise(mean = mean(Sepal.Length), 
+            sd = sd(Sepal.Length),
+            min = min(Sepal.Length), 
+            max = max(Sepal.Length)) %>%
+  pander
+```
+
+Be careful. It matters what order you load packages in (```library()```). Some other packages have a `summarise` command, so if you load them *after* `dplyr`, it would override this function.
+
+Another package, `tidyr`, allows you to reshape the dataframe (long $\rightarrow$ wide or wide $\rightarrow$ long). I'd always struggled a bit with the other alternatives (`melt` or `dcast`). 
+
+```{r}
+
+# reshape wide to long with `gather`
+# gathers names of columns that start with 'Sepal' into a new column 'varName', with the relevant values in a new column 'value'
+# gets rid of the Species column
+# prints just the top 10 and bottom 10 columns
+# formats it nicely
+
+iris %>% 
+  gather(varName, value, starts_with('Sepal')) %>%
+  select(-Species) %>% 
+  filter(row_number() < 10 | row_number() >290) %>% 
+  pander
+```
+
+For more examples see [here](https://rpubs.com/bradleyboehmke/data_wrangling) or [here](http://seananderson.ca/2014/09/13/dplyr-intro.html) or [here](http://genomicsclass.github.io/book/pages/dplyr_tutorial.html). 
+
+# Bibliography
+
+A list of citations will be included here if I include `bibliography: ../../writing/bib1.bib` in the YAML header. 
+
+But back to the slides to wrap up!
